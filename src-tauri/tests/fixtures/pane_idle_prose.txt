@@ -1,0 +1,32 @@
+
+  The retry layer was the culprit: the backoff was computed in milliseconds but the config
+  value is documented as seconds, so every retry fired 1000x too early and the client
+  hammered the upstream on each failure.
+
+  The fix
+
+  backoff_secs is now parsed once at config load (config.rs), validated against a 1..=600
+  range, and passed down as Duration. I verified the two things that have bitten this
+  client before:
+
+  - The timer is cancelled on success — the callback now runs before the timer is armed,
+    so a fast response can no longer race its own retry.
+  - A bad config value surfaces at startup — an out-of-range backoff returns a config
+    error instead of silently clamping, which is what hid the original typo.
+
+✻ Churned for 5m 36s · done 20:51 · 1 shell still running
+  ⎿  Referenced file src/client/retry.rs
+  ⎿  Referenced file src/client/config.rs
+
+⏺ Task "Wait for the integration suite to finish" still running in background
+  ⎿  Skills restored (artifact-design, superpowers:brainstorming)
+
+⏺ Compacted while idle, before the prompt cache expired · turn off with
+  "idleCompaction": false in settings.json
+                                                     ✔ Update installed · Restart to update
+⏺ Do you want me to also update the tests and run the full suite?
+
+────────────────────────────────────────────────────────────────────────────────────── idwr ─
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell · ⧉ 2 · ← 5 agents · ↓ to manage

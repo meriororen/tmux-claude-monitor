@@ -1,0 +1,76 @@
+<h2>v2 — summon, navigate, search</h2>
+<p class="subtitle">Not a choice — one design, two modes side by side. Left: just summoned (normal mode, j/k moves the highlighted card). Right: after pressing <code>/</code> (search mode, typing filters fuzzily). Enter jumps and hides the panel in both.</p>
+
+<style>
+  .panel2 {
+    width: 340px; background: #16181d; border: 1px solid #2b2f3a; border-radius: 12px;
+    padding: 10px; font-family: -apple-system, sans-serif; color: #e5e7eb;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45); margin: 0 auto;
+  }
+  .panel2 .phead { display:flex; justify-content:space-between; padding: 2px 6px 10px 6px; font-size: 11px; color: #6b7280; }
+  .sess2 { border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: #1d2027; border: 1px solid transparent; }
+  .sess2.selected { border-color: #7aa2f7; background: #20283a; }
+  .srow2 { display:flex; align-items:center; gap:8px; }
+  .dot2 { width:8px; height:8px; border-radius:50%; flex:none; }
+  .d-work { background:#4ade80; box-shadow:0 0 6px #4ade8088; }
+  .d-wait { background:#fbbf24; box-shadow:0 0 6px #fbbf2488; }
+  .d-stale { background:#6b7280; }
+  .stitle2 { font-size:13px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .smeta2 { font-size:10px; color:#6b7280; }
+  .ssum2 { font-size:11px; color:#9ca3af; margin-top:3px; padding-left:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .searchbar { display:flex; gap:6px; align-items:center; background:#0f1115; border:1px solid #7aa2f7; border-radius:6px; padding:5px 8px; margin-bottom:8px; font-size:12px; }
+  .searchbar .slash { color:#7aa2f7; font-family: ui-monospace, monospace; }
+  .searchbar .q { color:#e5e7eb; font-family: ui-monospace, monospace; }
+  .searchbar .caret { display:inline-block; width:7px; height:13px; background:#e5e7eb; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hintbar { font-size:10px; color:#6b7280; padding: 6px 6px 0 6px; border-top: 1px solid #2b2f3a; margin-top: 2px; display:flex; gap:10px; }
+  .hintbar b { color:#9ca3af; font-weight:600; font-family: ui-monospace, monospace; }
+  .hl { color:#7aa2f7; font-weight:700; }
+</style>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Normal mode — just summoned (⌘⇧K)</div>
+    <div class="mockup-body" style="background:#0b0c10; padding:16px;">
+      <div class="panel2">
+        <div class="phead"><span>CLAUDE SESSIONS — 5</span><span>⚙</span></div>
+        <div class="sess2">
+          <div class="srow2"><div class="dot2 d-wait"></div><div class="stitle2">rainbow: web 複数予約の絞り込み</div><div class="smeta2">2m</div></div>
+          <div class="ssum2">⚠ Waiting: Do you want to proceed?</div>
+        </div>
+        <div class="sess2 selected">
+          <div class="srow2"><div class="dot2 d-work"></div><div class="stitle2">pipeline: orders dedup fix</div><div class="smeta2">now</div></div>
+          <div class="ssum2">Edit: orders.sqlx</div>
+        </div>
+        <div class="sess2">
+          <div class="srow2"><div class="dot2 d-work"></div><div class="stitle2">webapp: forgot-password flow</div><div class="smeta2">now</div></div>
+          <div class="ssum2">Bash: pnpm test:jest</div>
+        </div>
+        <div class="sess2">
+          <div class="srow2"><div class="dot2 d-stale"></div><div class="stitle2">shift_analysis: doctor hours</div><div class="smeta2">3h</div></div>
+          <div class="ssum2">Idle — wrote doctor_monthly_hours.sql</div>
+        </div>
+        <div class="hintbar"><span><b>j/k</b> move</span><span><b>g/G</b> top/bottom</span><span><b>/</b> search</span><span><b>↵</b> jump</span><span><b>esc</b> hide</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Search mode — after pressing / and typing "rai"</div>
+    <div class="mockup-body" style="background:#0b0c10; padding:16px;">
+      <div class="panel2">
+        <div class="phead"><span>CLAUDE SESSIONS — 2/5</span><span>⚙</span></div>
+        <div class="searchbar"><span class="slash">/</span><span class="q">rai</span><span class="caret"></span></div>
+        <div class="sess2 selected">
+          <div class="srow2"><div class="dot2 d-wait"></div><div class="stitle2"><span class="hl">rai</span>jin: web 複数予約の絞り込み</div><div class="smeta2">2m</div></div>
+          <div class="ssum2">⚠ Waiting: Do you want to proceed?</div>
+        </div>
+        <div class="sess2">
+          <div class="srow2"><div class="dot2 d-work"></div><div class="stitle2"><span class="hl">rai</span>jin: add-selfcheckin-log-calls</div><div class="smeta2">now</div></div>
+          <div class="ssum2">Bash: make test</div>
+        </div>
+        <div class="hintbar"><span><b>type</b> filter</span><span><b>↵</b> jump to selected</span><span><b>esc</b> clear → normal</span><span><b>^j/^k</b> move</span></div>
+      </div>
+    </div>
+  </div>
+</div>

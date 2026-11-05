@@ -1,0 +1,51 @@
+
+  The retry layer was the culprit: the backoff was computed in milliseconds but the config
+  value is documented as seconds, so every retry fired 1000x too early and the client
+  hammered the upstream on each failure:
+
+  attempt 1  12ms
+  attempt 2  25ms
+  attempt 3  50ms
+  attempt 4  101ms   ← should have been ~100s by now
+
+  The three timeouts in the log were all the same request id — the handler retried a
+  request that had already succeeded, because the success callback ran after the timer was
+  armed. Idempotency keys made the duplicates harmless; the series was simply noisy.
+
+  The fix
+
+  backoff_secs is now parsed once at config load (config.rs), validated against a 1..=600
+  range, and passed down as Duration. I verified the two things that have bitten this
+  client before:
+
+  - The timer is cancelled on success — the callback now runs before the timer is armed,
+    so a fast response can no longer race its own retry.
+  - A bad config value surfaces at startup — an out-of-range backoff returns a config
+    error instead of silently clamping, which is what hid the original typo.
+
+  One thing worth knowing: the mock upstream returns an empty body for HEAD requests.
+  That looked wrong until I checked the real upstream and got exactly the same empty
+  body — RFC-compliant, and the content-length header is what the client actually uses.
+  I documented it so nobody "fixes" the mock later by adding a body.
+
+  I did not bump the client's major version (the config key is unchanged). A stricter
+  range check doesn't seem worth a breaking release — say the word and it's a one-line
+  change.
+
+✻ Churned for 5m 36s · done 20:51 · 1 shell still running
+  ⎿  Referenced file src/client/CLAUDE.md
+  ⎿  Referenced file src/client/retry.rs
+  ⎿  Read ../../../../private/tmp/claude-000/example-project/tasks/abc123.output (14 lines)
+  ⎿  Read ../../../../private/tmp/claude-000/example-project/tasks/def456.output (18 lines)
+  ⎿  Referenced file src/client/config.rs
+
+⏺ Task "Wait for the integration suite to finish" still running in background
+  ⎿  Skills restored (artifact-design, superpowers:brainstorming)
+
+⏺ Compacted while idle, before the prompt cache expired · turn off with
+  "idleCompaction": false in settings.json
+                                                     ✔ Update installed · Restart to update
+────────────────────────────────────────────────────────────────────────────────────── idwr ─
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell · ⧉ 2 · ← 5 agents · ↓ to manage

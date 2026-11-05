@@ -1,0 +1,54 @@
+      116 +            "custom-title" => custom = v["customTitle"].as_str().map(str::to_string),
+      117 +            "ai-title" => ai = v["aiTitle"].as_str().map(str::to_string),
+      118 +            "summary" => legacy = v["summary"].as_str().map(str::to_string),
+      119 +            "user" => {
+      120 +                if info.first_user_text.is_none() {
+      121 +                    if let Some(t) = text_of_content(&v["message"]["content"]) {
+      122 +                        info.first_user_text = Some(truncate_chars(&t, 120));
+      123 +                    }
+      124 +                }
+      125 +            }
+      126 +            "assistant" => {
+      127 +                if let Some(blocks) = v["message"]["content"].as_array() {
+      128 +                    for b in blocks {
+      129 +                        match b["type"].as_str().unwrap_or("") {
+      130 +                            "text" => {
+      131 +                                if let Some(t) = b["text"].as_str() {
+      132 +                                    if !t.trim().is_empty() {
+      133 +                                        info.last_assistant_text =
+      134 +                                            Some(truncate_chars(t.trim(), 120));
+      135 +                                        info.current_tool = None;
+      136 +                                    }
+      137 +                                }
+      138 +                            }
+      139 +                            "tool_use" => info.current_tool = tool_label(b),
+      140 +                            _ => {}
+      141 +                        }
+      142 +                    }
+      143 +                }
+      144 +            }
+      145 +            _ => {}
+      146 +        }
+      147 +    }
+      148 +    info.summary_title = custom.or(ai).or(legacy);
+      149 +    info
+      150 +}
+      151 +
+      152  #[cfg(test)]
+      153  mod tests {
+      154      use super::*;
+
+  Ran 2 shell commands
+
+⏺ Task 5 needs real pane fixtures. Scanning live panes to harvest each state:
+
+  Capturing working/idle/idle_title pane fixtures
+  ⎿  $ cd ~/work/tmux-claude-monitor && mkdir -p src-tauri/tests/fixtures && tmux capture-pane -p -t %22 > src-tauri/tests/fixtures/pane_working.txt && tmux capture-pane -p -t %6 >
+     src-tauri/tests/fixtures/pane_idle_title.txt && tmux capture-pane -p -t %24 > src-tauri/tests/fixtures/pane_idle.txt && tai…
+
+✽ Billowing… (8m 26s · ↓ 20.8k tokens)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← 5 agents

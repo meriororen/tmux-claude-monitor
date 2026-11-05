@@ -1,0 +1,103 @@
+<h2>The corner panel — two density options</h2>
+<p class="subtitle">Both are always-on-top, ~340px wide, pinned to a screen corner. Status colors: <span style="color:#4ade80">●</span> working, <span style="color:#fbbf24">●</span> needs your input, <span style="color:#9ca3af">●</span> stale/idle. Clicking a card jumps to that tmux session+pane in iTerm2. Which density feels right?</p>
+
+<style>
+  .panel {
+    width: 340px;
+    background: #16181d;
+    border: 1px solid #2b2f3a;
+    border-radius: 12px;
+    padding: 10px;
+    font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    color: #e5e7eb;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+    margin: 0 auto;
+  }
+  .panel .phead {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 2px 6px 10px 6px; font-size: 11px; color: #6b7280;
+  }
+  .sess {
+    border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;
+    background: #1d2027; border: 1px solid transparent; cursor: pointer;
+  }
+  .sess:hover { border-color: #3b4252; }
+  .sess.attn { background: #2a2210; border: 1px solid #fbbf24; }
+  .srow { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.work { background: #4ade80; box-shadow: 0 0 6px #4ade8088; }
+  .dot.wait { background: #fbbf24; box-shadow: 0 0 6px #fbbf2488; }
+  .dot.stale { background: #6b7280; }
+  .stitle { font-size: 13px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .smeta { font-size: 10px; color: #6b7280; flex: none; }
+  .ssummary { font-size: 11px; color: #9ca3af; margin-top: 3px; padding-left: 16px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ssummary2 { font-size: 11px; color: #9ca3af; margin-top: 4px; padding-left: 16px; line-height: 1.45; }
+  .stag { display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 4px;
+    background: #262a33; color: #8b93a3; margin-right: 4px; font-family: ui-monospace, monospace; }
+  .sfoot { margin-top: 5px; padding-left: 16px; }
+  .badge-wait { font-size: 10px; color: #fbbf24; font-weight: 600; }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="compact" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Compact — one line per session + summary</h3>
+      <p>Fits ~8 sessions without scrolling. Title, one-line summary, idle time.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="background:#0b0c10; padding:18px;">
+          <div class="panel">
+            <div class="phead"><span>CLAUDE SESSIONS — 4</span><span>⚙</span></div>
+            <div class="sess attn">
+              <div class="srow"><div class="dot wait"></div><div class="stitle">rainbow: web 複数予約の絞り込み</div><div class="smeta">2m</div></div>
+              <div class="ssummary">⚠ Waiting: permission to run `make test`</div>
+            </div>
+            <div class="sess">
+              <div class="srow"><div class="dot work"></div><div class="stitle">pipeline: orders dedup fix</div><div class="smeta">now</div></div>
+              <div class="ssummary">Editing orders.sqlx — sibling-row dedup</div>
+            </div>
+            <div class="sess">
+              <div class="srow"><div class="dot work"></div><div class="stitle">webapp: forgot-password flow</div><div class="smeta">now</div></div>
+              <div class="ssummary">Running pnpm test:jest (3rd attempt)</div>
+            </div>
+            <div class="sess">
+              <div class="srow"><div class="dot stale"></div><div class="stitle">shift_analysis: doctor hours</div><div class="smeta">3h</div></div>
+              <div class="ssummary">Idle — last: wrote doctor_monthly_hours.sql</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="detailed" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Detailed — richer cards</h3>
+      <p>Fits ~4–5 sessions. Adds tmux session/pane tag and a two-line summary.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="background:#0b0c10; padding:18px;">
+          <div class="panel">
+            <div class="phead"><span>CLAUDE SESSIONS — 4</span><span>⚙</span></div>
+            <div class="sess attn">
+              <div class="srow"><div class="dot wait"></div><div class="stitle">web 複数予約の絞り込み</div><div class="smeta">waiting 2m</div></div>
+              <div class="ssummary2">Implementing nearest-reservation filter in the Reception container. Asking permission to run `make test`.</div>
+              <div class="sfoot"><span class="stag">tmux: rainbow · pane 0</span><span class="badge-wait">⚠ NEEDS INPUT</span></div>
+            </div>
+            <div class="sess">
+              <div class="srow"><div class="dot work"></div><div class="stitle">visitors dedup fix</div><div class="smeta">active</div></div>
+              <div class="ssummary2">Fixing sibling-row inflation in the junction table; editing orders.sqlx.</div>
+              <div class="sfoot"><span class="stag">tmux: pipeline · pane 1</span></div>
+            </div>
+            <div class="sess">
+              <div class="srow"><div class="dot stale"></div><div class="stitle">doctor hours materialization</div><div class="smeta">idle 3h</div></div>
+              <div class="ssummary2">Last action: wrote doctor_monthly_hours.sql, no activity since 11:20.</div>
+              <div class="sfoot"><span class="stag">tmux: shift · pane 0</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
