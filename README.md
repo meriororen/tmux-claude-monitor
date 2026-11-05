@@ -1,28 +1,32 @@
 # tmux Claude Monitor
 
-メニューバー常駐の召喚型パネルで、tmux 内で動いているすべての Claude Code セッションを一覧監視する macOS アプリ（Tauri v2）。
+[日本語版 README はこちら](README.ja.md)
 
-- **⌘⇧K で召喚/非表示**（グローバルショートカット、`settings.json` で変更可・変更は再起動後に反映）
-- 各カード: 状態ドット（🟢作業中 / 🟡入力待ち / ⚪アイドル・放置）・タイトル・直近アクティビティの要約・アイドル時間
-- 入力待ち（権限ダイアログ等の structured prompt）になった瞬間に macOS 通知。文末が「?」のただの質問はアンバー表示のみで通知しない
-- **ジャンプ（Enter でもクリックでも）すると iTerm2 を前面化して該当ペインに切り替え、パネルは自動で隠れる**
-- 全 Space・フルスクリーンアプリの上にも表示（NSWindow collectionBehavior shim）
-- **バックグラウンド常駐**: 起動時は非表示（メニューバーのアイコンが起動確認）。ウィンドウを閉じても終了しない。終了はトレイメニューの Quit から。入力待ちセッションがあるとトレイに `● N` 表示
-- ログイン時に自動起動したい場合: システム設定 > 一般 > ログイン項目 にアプリを追加
+A macOS menu-bar app (Tauri v2) that monitors every Claude Code session running inside tmux, in one summonable panel.
 
-## キー操作（vim 風モーダル）
+If you keep several persistent tmux sessions, each with a Claude Code pane working on something different, you know the problem: which session is still working, which one is waiting for your input, and which one went stale an hour ago? Instead of cycling through sessions with `ctrl+b n`/`p`, press a shortcut and see them all.
 
-| キー | モード | 動作 |
+- **Summon / hide with ⌘⇧K** (global shortcut, configurable in `settings.json`; takes effect after restart)
+- One card per Claude session: status dot (🟢 working / 🟡 needs input / ⚪ idle or stale), a derived title, a one-line summary of recent activity, and idle time
+- **macOS notification the moment a session needs input** (permission dialogs and other structured prompts). A turn that merely ends with a prose question ("Want me to run the tests?") shows amber but never notifies
+- **Jump (Enter or click) brings iTerm2 to the front, switches to the exact tmux pane, and hides the panel**
+- Floats above every Space and over fullscreen apps (NSWindow collectionBehavior shim)
+- **Runs in the background**: launches hidden (the menu-bar icon confirms it's alive), closing the window never quits — quit from the tray menu. The tray shows `● N` while N sessions are waiting for input
+- To start at login: System Settings → General → Login Items → add the app
+
+## Keys (vim-style modal)
+
+| Key | Mode | Action |
 |---|---|---|
-| `⌘⇧K` | どこでも | パネルの表示/非表示トグル |
-| `j` / `k` (`↓`/`↑`) | normal | 選択を下/上へ |
-| `g` / `G` | normal | 先頭 / 末尾へ |
-| `/` | normal | 検索モードへ（ファジー検索、マッチ文字はハイライト） |
-| `Enter` | 両方 | 選択セッションへジャンプしてパネルを隠す |
-| `Esc` | normal | パネルを隠す |
-| `Esc` | search | クエリをクリアして normal へ |
-| `Backspace`（空クエリ時） | search | normal へ戻る |
-| `^j` / `^k` (`↓`/`↑`) | search | 入力しながら選択移動 |
+| `⌘⇧K` | anywhere | Toggle the panel |
+| `j` / `k` (`↓`/`↑`) | normal | Move selection down / up |
+| `g` / `G` | normal | First / last card |
+| `/` | normal | Enter search mode (fuzzy matching, matched characters highlighted) |
+| `Enter` | both | Jump to the selected session and hide the panel |
+| `Esc` | normal | Hide the panel |
+| `Esc` | search | Clear the query and return to normal |
+| `Backspace` (empty query) | search | Return to normal |
+| `^j` / `^k` (`↓`/`↑`) | search | Move selection while typing |
 
 ## Build & Install
 
@@ -32,41 +36,42 @@ pnpm tauri build          # → src-tauri/target/release/bundle/macos/tmux-claud
 cp -R src-tauri/target/release/bundle/macos/tmux-claude-monitor.app /Applications/
 ```
 
-通知はバンドルされた .app として起動した場合のみ機能する（`tauri dev` では出ない）。署名はアドホックで良い（個人利用）。
+Notifications only work when launched as the bundled .app (not under `tauri dev`). Ad-hoc code signing is fine for personal use.
 
-## 初回起動時の権限
+## First-launch permissions
 
-1. **通知** — 最初の通知時に macOS が許可を求める → 許可
-2. **オートメーション (iTerm2)** — 最初にカードをクリックした時に
-   「"tmux-claude-monitor" wants access to control "iTerm2"」→ 許可
-   （システム設定 > プライバシーとセキュリティ > オートメーション で後から変更可）
+1. **Notifications** — macOS asks on the first notification → allow
+2. **Automation (iTerm2)** — on your first jump, macOS asks
+   “"tmux-claude-monitor" wants access to control "iTerm2"” → allow
+   (changeable later under System Settings → Privacy & Security → Automation)
 
-## 設定
+## Settings
 
-ヘッダーの ⚙ をクリックすると `settings.json` がエディタで開く。編集は再起動なしで次のポーリングから反映される。
+Click the ⚙ in the header to open `settings.json` in your editor. Edits apply from the next poll, no restart needed (except the shortcut).
 
-| key | default | 意味 |
+| key | default | meaning |
 |---|---|---|
-| `poll_interval_ms` | 2000 | ポーリング間隔（下限 250ms にクランプ） |
-| `stale_after_min` | 30 | この分数アイドルで「放置」(gray) 扱い |
-| `notifications` | true | macOS 通知の有効/無効 |
-| `window_pos` | null | パネル位置（ドラッグで自動保存） |
-| `global_shortcut` | "cmd+shift+k" | 召喚ショートカット（**再起動後に反映**。競合で登録に失敗した場合はトレイメニューに ⚠ 表示） |
+| `poll_interval_ms` | 2000 | Poll interval (clamped to ≥ 250 ms) |
+| `stale_after_min` | 30 | Minutes of idle before a session counts as stale (gray) |
+| `notifications` | true | Enable/disable macOS notifications |
+| `window_pos` | null | Panel position (saved automatically when you drag it) |
+| `global_shortcut` | "cmd+shift+k" | Summon shortcut (**applies after restart**; if registration fails due to a conflict, the tray menu shows ⚠) |
 
-場所: `~/Library/Application Support/jp.isa.tmux-claude-monitor/settings.json`
+Location: `~/Library/Application Support/jp.isa.tmux-claude-monitor/settings.json`
 
-## 仕組み（概要）
+## How it works
 
-- 2秒ごとに `tmux list-panes -a` → 各ペインのプロセスツリー（`ps` スナップショット1回）から claude プロセスを検出
-- タイトル/要約は `~/.claude/projects/<escaped-cwd>/<session>.jsonl` の末尾 256KB と、ペイン上部のルーラータイトルから導出
-- 状態は `tmux capture-pane` のヒューリスティクス（`esc to interrupt` = 作業中、`Do you want` / `❯ 1.` / `Enter to confirm` = 入力待ち）。パターンは `src-tauri/src/state_detect.rs` に集約、実画面フィクスチャ（`src-tauri/tests/fixtures/`）でテスト
-- 観測は読み取り専用。tmux への書き込みはクリック時の `switch-client` のみ
+- Every 2 s: `tmux list-panes -a`, then one `ps` snapshot to find the claude process in each pane's process tree
+- Titles and summaries are derived from the tail (256 KB) of `~/.claude/projects/<escaped-cwd>/<session>.jsonl` plus the ruler title Claude Code renders above its input box
+- State comes from `tmux capture-pane` heuristics: `esc to interrupt` = working; `❯ 1.` / `Enter to confirm` = waiting for structured input (deliberately **not** `Do you want` — prose turns routinely end with it). All patterns live in `src-tauri/src/state_detect.rs`, tested against real-screen fixtures in `src-tauri/tests/fixtures/`
+- Observation is read-only; the only write to tmux is `switch-client` when you jump
 
-### 既知の制限 (v1)
+### Known limitations
 
-- 同じリポジトリで `--resume` なしの claude が複数動いていると、要約が最新 mtime の transcript に揃ってしまう（タイトルはペイン由来なので正しい）
-- iTerm2 専用ジャンプ。tmux クライアントが未アタッチの場合はエラートースト表示のみ
-- 文中に埋もれた質問（文末が `?` でない）は入力待ちとして検出されない
+- If multiple claude processes run in the same repo without `--resume`, their summaries all follow the newest-mtime transcript (titles stay correct — they come from the pane)
+- Jumping targets iTerm2 only. If no tmux client is attached you just get an error toast
+- A question buried mid-sentence (not ending with `?`) is not detected as needing input
+- The heuristics encode Claude Code's current TUI strings; a Claude Code update that changes them means re-capturing fixtures and adjusting `state_detect.rs`
 
 ## Development
 
@@ -74,8 +79,11 @@ cp -R src-tauri/target/release/bundle/macos/tmux-claude-monitor.app /Application
 pnpm tauri dev                  # dev app
 pnpm test                       # frontend unit tests (vitest)
 cd src-tauri && cargo test      # Rust unit tests (fixtures included)
-cd src-tauri && cargo run --example scan   # 1 tick をCLIで実行して検出結果を表示
+cd src-tauri && cargo run --example scan   # run one poll tick in the CLI and print what it detects
 ```
 
-設計ドキュメント: `docs/superpowers/specs/2026-11-05-tmux-claude-monitor-design.md`
-実装計画: `docs/superpowers/plans/2026-11-05-tmux-claude-monitor.md`
+Design docs: `docs/superpowers/specs/` · Implementation plans: `docs/superpowers/plans/`
+
+## License
+
+[MIT](LICENSE)
