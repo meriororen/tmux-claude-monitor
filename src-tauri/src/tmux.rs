@@ -73,6 +73,11 @@ pub(crate) fn classify_tmux_failure(stderr: &str) -> TmuxError {
 fn run_tmux(bin: &Path, args: &[&str]) -> Result<String, TmuxError> {
     let out = Command::new(bin)
         .args(args)
+        // GUI apps launched by launchd have no LANG/LC_CTYPE, so tmux falls
+        // back to the C locale and sanitizes "non-printable" output bytes to
+        // `_` — destroying the TAB field separators in list-panes and any
+        // non-ASCII text in capture-pane. Force a UTF-8 locale for the client.
+        .env("LC_ALL", "en_US.UTF-8")
         .output()
         .map_err(|e| TmuxError::Io(e.to_string()))?;
     if out.status.success() {
