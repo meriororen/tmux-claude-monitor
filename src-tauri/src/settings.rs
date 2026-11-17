@@ -13,6 +13,9 @@ pub struct Settings {
     pub window_pos: Option<(i32, i32)>,
     /// Read at launch; changing it requires an app restart.
     pub global_shortcut: String,
+    /// Path or name of the `claude` binary used to resume favorites;
+    /// `TCM_CLAUDE_BIN` overrides it.
+    pub claude_bin: Option<String>,
 }
 
 impl Default for Settings {
@@ -23,6 +26,7 @@ impl Default for Settings {
             notifications: true,
             window_pos: None,
             global_shortcut: "cmd+shift+k".to_string(),
+            claude_bin: None,
         }
     }
 }
@@ -111,6 +115,7 @@ mod tests {
         assert!(s.notifications);
         assert_eq!(s.window_pos, None);
         assert_eq!(s.global_shortcut, "cmd+shift+k");
+        assert_eq!(s.claude_bin, None);
         // save → load roundtrip
         let changed = Settings {
             poll_interval_ms: 5000,
@@ -118,6 +123,7 @@ mod tests {
             notifications: false,
             window_pos: Some((12, 34)),
             global_shortcut: "alt+space".to_string(),
+            claude_bin: Some("/x/claude".to_string()),
         };
         changed.save(tmp.path()).unwrap();
         assert_eq!(Settings::load(tmp.path()), changed);

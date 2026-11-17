@@ -1,6 +1,7 @@
 //! Assembles SessionCards from tmux/procs/transcript/state_detect every tick,
 //! emits them to the webview, and decides notifications.
 
+use crate::favorites::{Favorites, favorites_view};
 use crate::settings::Settings;
 use crate::state_detect::{self, PaneState};
 use crate::transcript::{self, TranscriptInfo};
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-const TAIL_BYTES: u64 = 262_144;
+pub(crate) const TAIL_BYTES: u64 = 262_144;
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CardState {
@@ -19,6 +20,7 @@ pub enum CardState {
     NeedsInputProse,
     Idle,
     Stale,
+    Dead,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -32,6 +34,10 @@ pub struct SessionCard {
     pub summary: String,
     pub state: CardState,
     pub idle_secs: u64,
+    pub session_uuid: Option<String>,
+    pub cwd: String,
+    pub starred: bool,
+    pub transcript_missing: bool,
 }
 
 /// True when the pane's transcript mapping must be (re)resolved: the claude
@@ -134,9 +140,15 @@ pub struct PaneCache {
     claude_pid: i32,
     cwd: PathBuf,
     transcript: Option<PathBuf>,
+    /// True when the transcript was fixed by a `--resume <id>` arg; otherwise
+    /// it is re-scanned every tick so `/clear` (new jsonl) is followed.
+    pinned_by_resume: bool,
+    /// When the claude process started (ps etime at resolve time). Steers the
+    /// unpinned fallback away from sibling panes' transcripts in the same cwd.
+    claude_start: Option<SystemTime>,
 }
 
-fn projects_root() -> PathBuf {
+pub(crate) fn projects_root() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".claude")
         .join("projects")
@@ -157,11 +169,17 @@ fn sort_most_recent_first(cards: &mut [SessionCard]) {
     cards.sort_by_key(|c| c.idle_secs);
 }
 
+/// A Claude session's identity is its transcript file stem (the session UUID).
+pub fn uuid_of_transcript(path: &Path) -> Option<String> {
+    path.file_stem().map(|s| s.to_string_lossy().into_owned())
+}
+
 fn build_cards(
     tmux_bin: &Path,
     ps: &str,
     cache: &mut HashMap<String, PaneCache>,
     stale_after_min: u64,
+    favs: &Favorites,
 ) -> Vec<SessionCard> {
     let panes = match tmux::list_panes(tmux_bin) {
         Ok(p) => p,
@@ -169,10 +187,18 @@ fn build_cards(
     };
     let mut cards = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for pane in panes {
-        let Some(claude) = procs::find_claude_in_pane(pane.pane_pid, ps) else {
-            continue;
-        };
+    // Pair each pane with its claude process first: the fallback resolver
+    // must know every uuid claimed by a `--resume` pane this tick, so a
+    // busy sibling transcript in a shared cwd is never adopted.
+    let with_claude: Vec<_> = panes
+        .into_iter()
+        .filter_map(|p| procs::find_claude_in_pane(p.pane_pid, ps).map(|c| (p, c)))
+        .collect();
+    let claimed: std::collections::HashSet<String> = with_claude
+        .iter()
+        .filter_map(|(_, c)| c.resume_session_id.clone())
+        .collect();
+    for (pane, claude) in with_claude {
         seen.insert(pane.pane_id.clone());
         let entry = cache.entry(pane.pane_id.clone()).or_default();
         if should_reresolve(entry.claude_pid, claude.pid, entry.transcript.is_some()) {
@@ -180,10 +206,32 @@ fn build_cards(
             entry.claude_pid = claude.pid;
             entry.cwd = procs::cwd_of_pid(claude.pid)
                 .unwrap_or_else(|| PathBuf::from(&pane.current_path));
-            entry.transcript = transcript::locate_transcript(
+            entry.claude_start = claude
+                .age_secs
+                .map(|a| SystemTime::now() - std::time::Duration::from_secs(a));
+            let ctx = transcript::ResolveCtx {
+                claimed: &claimed,
+                proc_start: entry.claude_start,
+            };
+            let (found, pinned) = transcript::resolve_transcript(
                 &projects_root(),
                 &entry.cwd,
                 claude.resume_session_id.as_deref(),
+                &ctx,
+            );
+            entry.transcript = found;
+            entry.pinned_by_resume = pinned;
+        } else {
+            let ctx = transcript::ResolveCtx {
+                claimed: &claimed,
+                proc_start: entry.claude_start,
+            };
+            entry.transcript = transcript::rescan_transcript(
+                &projects_root(),
+                &entry.cwd,
+                entry.pinned_by_resume,
+                entry.transcript.take(),
+                &ctx,
             );
         }
         let pane_text = tmux::capture_pane(tmux_bin, &pane.pane_id).unwrap_or_default();
@@ -198,6 +246,8 @@ fn build_cards(
         let state = derive_card_state(pane_state, &info, idle_secs, stale_after_min);
         let pane_title = state_detect::extract_pane_title(&pane_text);
         let pending = state_detect::extract_pending_question(&pane_text);
+        let session_uuid = entry.transcript.as_deref().and_then(uuid_of_transcript);
+        let starred = session_uuid.as_deref().is_some_and(|u| favs.contains(u));
         cards.push(SessionCard {
             pane_id: pane.pane_id.clone(),
             tmux_session: pane.session.clone(),
@@ -207,6 +257,10 @@ fn build_cards(
             summary: derive_summary(state, pending.as_deref(), &info),
             state,
             idle_secs,
+            session_uuid,
+            cwd: entry.cwd.to_string_lossy().into_owned(),
+            starred,
+            transcript_missing: false,
         });
     }
     cache.retain(|k, _| seen.contains(k));
@@ -220,19 +274,29 @@ pub fn build_cards_for_example(
     ps: &str,
     cache: &mut HashMap<String, PaneCache>,
     stale_after_min: u64,
+    favs: &Favorites,
 ) -> Vec<SessionCard> {
-    build_cards(tmux_bin, ps, cache, stale_after_min)
+    build_cards(tmux_bin, ps, cache, stale_after_min, favs)
+}
+
+#[derive(Serialize, Clone)]
+struct TickPayload<'a> {
+    cards: &'a [SessionCard],
+    favorites: Vec<SessionCard>,
 }
 
 pub fn spawn(app: tauri::AppHandle) {
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
     use tauri_plugin_notification::NotificationExt;
     std::thread::spawn(move || {
         let config_dir = config_dir(&app);
         let tmux_bin = match tmux::resolve_tmux_bin() {
             Ok(b) => b,
             Err(_) => {
-                let _ = app.emit("sessions-updated", Vec::<SessionCard>::new());
+                let _ = app.emit(
+                    "sessions-updated",
+                    TickPayload { cards: &[], favorites: Vec::new() },
+                );
                 return;
             }
         };
@@ -241,7 +305,14 @@ pub fn spawn(app: tauri::AppHandle) {
         loop {
             let settings = Settings::load(&config_dir);
             let ps = procs::snapshot_ps();
-            let cards = build_cards(&tmux_bin, &ps, &mut cache, settings.stale_after_min);
+            // Lock, clone, drop: never hold the lock across the tick.
+            let favs: Favorites = app
+                .state::<crate::FavState>()
+                .0
+                .lock()
+                .unwrap()
+                .clone();
+            let cards = build_cards(&tmux_bin, &ps, &mut cache, settings.stale_after_min, &favs);
             if settings.notifications {
                 for msg in notifications_due(prev.as_ref(), &cards) {
                     let _ = app
@@ -258,7 +329,20 @@ pub fn spawn(app: tauri::AppHandle) {
                     .map(|c| (c.pane_id.clone(), c.state))
                     .collect(),
             );
-            let _ = app.emit("sessions-updated", &cards);
+            *app.state::<crate::LiveIndex>().0.lock().unwrap() = cards
+                .iter()
+                .filter_map(|c| {
+                    Some((
+                        c.session_uuid.clone()?,
+                        (c.tmux_session.clone(), c.window_index, c.pane_index),
+                    ))
+                })
+                .collect();
+            let favorites = favorites_view(&cards, &favs, &projects_root(), SystemTime::now());
+            let _ = app.emit(
+                "sessions-updated",
+                TickPayload { cards: &cards, favorites },
+            );
             // Tray title: "● N" while N sessions wait for input (v2).
             if let Some(handle) = {
                 use tauri::Manager;
@@ -312,7 +396,17 @@ mod tests {
             summary: String::new(),
             state,
             idle_secs: 0,
+            session_uuid: None,
+            cwd: "/tmp/t".into(),
+            starred: false,
+            transcript_missing: false,
         }
+    }
+
+    #[test]
+    fn uuid_of_transcript_is_file_stem() {
+        let p = Path::new("/x/projects/-u-w-rainbow/0123456789abcdef.jsonl");
+        assert_eq!(uuid_of_transcript(p), Some("0123456789abcdef".to_string()));
     }
 
     #[test]

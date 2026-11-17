@@ -8,20 +8,27 @@ import type { SessionCard } from "./render";
 
 export type Mode = "normal" | "search";
 
+export type Tab = "all" | "favorites";
+
 export interface UiState {
   mode: Mode;
   query: string;
   selectedPaneId: string | null;
+  tab: Tab;
 }
 
-export const initialState: UiState = { mode: "normal", query: "", selectedPaneId: null };
+export const initialState: UiState = { mode: "normal", query: "", selectedPaneId: null, tab: "all" };
 
 export type UiEvent =
   | { type: "key"; key: string; ctrl: boolean; composing: boolean }
   | { type: "query"; value: string }
   | { type: "shown" };
 
-export type Action = { type: "none" } | { type: "jump"; card: SessionCard } | { type: "hide" };
+export type Action =
+  | { type: "none" }
+  | { type: "jump"; card: SessionCard }
+  | { type: "hide" }
+  | { type: "toggleStar"; card: SessionCard };
 
 const NONE: Action = { type: "none" };
 
@@ -61,6 +68,15 @@ export function reduce(
   if (ev.composing) return { state, action: NONE, handled: false };
 
   const { key, ctrl } = ev;
+  if (key === "Tab") {
+    const next: UiState = {
+      ...state,
+      mode: "normal",
+      query: "",
+      tab: state.tab === "all" ? "favorites" : "all",
+    };
+    return { state: selectAt(next, visible, 0), action: NONE, handled: true };
+  }
   if (state.mode === "normal") {
     switch (key) {
       case "j":
@@ -75,6 +91,11 @@ export function reduce(
         return { state: selectAt(state, visible, visible.length - 1), action: NONE, handled: true };
       case "/":
         return { state: { ...state, mode: "search", query: "" }, action: NONE, handled: true };
+      case "f": {
+        const i = indexOfSelected(state, visible);
+        if (i < 0) return { state, action: NONE, handled: true };
+        return { state, action: { type: "toggleStar", card: visible[i].card }, handled: true };
+      }
       case "Enter":
         return { state, action: jumpSelected(state, visible), handled: true };
       case "Escape":

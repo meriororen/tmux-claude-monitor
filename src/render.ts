@@ -8,7 +8,8 @@ export type CardState =
   | "NeedsInputStructured"
   | "NeedsInputProse"
   | "Idle"
-  | "Stale";
+  | "Stale"
+  | "Dead";
 
 export interface SessionCard {
   paneId: string;
@@ -19,6 +20,10 @@ export interface SessionCard {
   summary: string;
   state: CardState;
   idleSecs: number;
+  sessionUuid: string | null;
+  cwd: string;
+  starred: boolean;
+  transcriptMissing: boolean;
 }
 
 const escChar = (c: string): string => {
@@ -64,19 +69,25 @@ function dotClass(state: CardState): string {
       return "stale";
     case "Idle":
       return "idle";
+    case "Dead":
+      return "dead";
   }
+}
+
+export function abbrevHome(p: string): string {
+  return p.replace(/^\/Users\/[^/]+\//, "~/");
 }
 
 const needsInput = (s: CardState) => s === "NeedsInputStructured" || s === "NeedsInputProse";
 
 const HINTS = {
   normal:
-    "<kbd>j/k</kbd> move · <kbd>g/G</kbd> top/bottom · <kbd>/</kbd> search · <kbd>↵</kbd> jump · <kbd>esc</kbd> hide",
+    "<kbd>j/k</kbd> move · <kbd>g/G</kbd> top/bottom · <kbd>/</kbd> search · <kbd>↵</kbd> jump · <kbd>esc</kbd> hide · <kbd>f</kbd> ★ · <kbd>⇥</kbd> tab",
   search:
     "<kbd>type</kbd> filter · <kbd>↵</kbd> jump to selected · <kbd>esc</kbd> clear → normal · <kbd>^j/^k</kbd> move",
 } as const;
 
-export function renderCards(visible: ScoredCard[], ui: UiState, total: number): string {
+export function renderCards(visible: ScoredCard[], ui: UiState, total: number, favCount: number): string {
   const inSearch = ui.mode === "search";
   const count = inSearch ? `${visible.length}/${total}` : `${total}`;
   const header = `<div class="phead" data-tauri-drag-region>
@@ -92,11 +103,17 @@ export function renderCards(visible: ScoredCard[], ui: UiState, total: number): 
       const c = sc.card;
       const attn = needsInput(c.state) ? " attn" : "";
       const sel = c.paneId === ui.selectedPaneId ? " selected" : "";
-      const idle = c.state === "Working" ? "now" : formatIdle(c.idleSecs);
+      const dead = c.state === "Dead";
+      const idle =
+        c.state === "Working" ? "now" : dead && c.transcriptMissing ? "—" : formatIdle(c.idleSecs);
       const title =
         sc.field === "title" ? escapeWithHighlights(c.title, sc.positions) : esc(c.title);
-      const summary =
-        sc.field === "summary" ? escapeWithHighlights(c.summary, sc.positions) : esc(c.summary);
+      const summary = dead
+        ? esc(c.transcriptMissing ? "transcript missing" : `${abbrevHome(c.cwd)} · resume ↻`)
+        : sc.field === "summary"
+          ? escapeWithHighlights(c.summary, sc.positions)
+          : esc(c.summary);
+      const star = `<button class="star${c.starred ? " on" : ""}" title="favorite">${c.starred ? "★" : "☆"}</button>`;
       const tag = inSearch
         ? `<span class="stag">${
             sc.field === "session"
@@ -104,18 +121,27 @@ export function renderCards(visible: ScoredCard[], ui: UiState, total: number): 
               : esc(c.tmuxSession)
           }</span>`
         : "";
-      return `<div class="sess${attn}${sel}" data-session="${esc(c.tmuxSession)}" data-window="${c.windowIndex}" data-pane="${c.paneIndex}">
-        <div class="srow"><div class="dot ${dotClass(c.state)}"></div><div class="stitle">${title}</div>${tag}<div class="smeta">${idle}</div></div>
+      return `<div class="sess${attn}${sel}${dead ? " dead" : ""}" data-session="${esc(c.tmuxSession)}" data-window="${c.windowIndex}" data-pane="${c.paneIndex}" data-uuid="${esc(c.sessionUuid ?? "")}" data-cwd="${esc(c.cwd)}" data-title="${esc(c.title)}" data-missing="${c.transcriptMissing}">
+        <div class="srow"><div class="dot ${dotClass(c.state)}"></div><div class="stitle">${title}</div>${tag}${star}<div class="smeta">${idle}</div></div>
         <div class="ssummary">${summary}</div>
       </div>`;
     })
     .join("\n");
   const empty =
     visible.length === 0
-      ? `<div class="empty" data-tauri-drag-region>${inSearch ? "No matches" : "No Claude sessions found in tmux"}</div>`
+      ? `<div class="empty" data-tauri-drag-region>${
+          inSearch
+            ? "No matches"
+            : ui.tab === "favorites"
+              ? "No favorites yet — press f on a session"
+              : "No Claude sessions found in tmux"
+        }</div>`
       : "";
+  const chip = (tab: "all" | "favorites", label: string) =>
+    `<button class="chip${ui.tab === tab ? " active" : ""}" data-tab="${tab}">${label}</button>`;
+  const tabs = `<div class="tabs" data-tauri-drag-region>${chip("all", "All")}${chip("favorites", `Favorites ${favCount}`)}</div>`;
   const hints = `<div class="hintbar" data-tauri-drag-region>${HINTS[ui.mode]}</div>`;
-  return header + body + empty + hints;
+  return header + body + empty + tabs + hints;
 }
 
 /// Rendered once per entry into search mode, into its own container.

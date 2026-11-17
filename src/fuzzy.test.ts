@@ -12,6 +12,10 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
     summary: "Editing retry.rs",
     state: "Idle",
     idleSecs: 5,
+    sessionUuid: null,
+    cwd: "/tmp",
+    starred: false,
+    transcriptMissing: false,
     ...over,
   };
 }

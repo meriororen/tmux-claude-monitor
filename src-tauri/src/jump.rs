@@ -26,6 +26,17 @@ pub fn activate_iterm() -> Result<(), String> {
     }
 }
 
+/// Focus iTerm2, land on the tmux pane, and hide the panel. Every jump hides
+/// the panel — keyboard Enter and mouse click alike (v2 spec, decided with
+/// the user).
+pub fn switch_and_show(app: &tauri::AppHandle, session: &str, w: u32, p: u32) -> Result<(), String> {
+    let bin = tmux::resolve_tmux_bin().map_err(|e| format!("tmux not found: {e:?}"))?;
+    activate_iterm()?;
+    tmux::switch_to(&bin, session, w, p).map_err(|e| format!("tmux switch failed: {e:?}"))?;
+    crate::window::hide_panel_now(app);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn jump_to_session(
     app: tauri::AppHandle,
@@ -33,14 +44,7 @@ pub fn jump_to_session(
     window_index: u32,
     pane_index: u32,
 ) -> Result<(), String> {
-    let bin = tmux::resolve_tmux_bin().map_err(|e| format!("tmux not found: {e:?}"))?;
-    activate_iterm()?;
-    tmux::switch_to(&bin, &session, window_index, pane_index)
-        .map_err(|e| format!("tmux switch failed: {e:?}"))?;
-    // Every jump hides the panel — keyboard Enter and mouse click alike
-    // (v2 spec, decided with the user).
-    crate::window::hide_panel_now(&app);
-    Ok(())
+    switch_and_show(&app, &session, window_index, pane_index)
 }
 
 #[cfg(test)]

@@ -1,13 +1,14 @@
 //! Manual check: one poller tick against the live system, printed as text.
 //! Run: cargo run --example scan
 
+use tmux_claude_monitor_lib::favorites::Favorites;
 use tmux_claude_monitor_lib::{poller, procs, tmux};
 
 fn main() {
     let bin = tmux::resolve_tmux_bin().expect("tmux not found");
     let ps = procs::snapshot_ps();
     let mut cache = std::collections::HashMap::new();
-    let cards = poller::build_cards_for_example(&bin, &ps, &mut cache, 30);
+    let cards = poller::build_cards_for_example(&bin, &ps, &mut cache, 30, &Favorites::default());
     println!("{} claude session(s):", cards.len());
     for c in &cards {
         println!(

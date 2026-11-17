@@ -111,6 +111,29 @@ pub fn switch_to(
     Ok(())
 }
 
+const NEW_WINDOW_FORMAT: &str = "#{session_name}\t#{window_index}\t#{pane_index}";
+
+/// Argv for `tmux new-window`. cwd and the shell command stay single argv
+/// elements, so spaces or metacharacters in cwd never reach a shell.
+pub fn new_window_args<'a>(cwd: &'a str, cmd: &'a str) -> Vec<&'a str> {
+    vec!["new-window", "-P", "-F", NEW_WINDOW_FORMAT, "-c", cwd, cmd]
+}
+
+pub fn parse_new_window_output(out: &str) -> Option<(String, u32, u32)> {
+    let f: Vec<&str> = out.trim_end_matches('\n').split('\t').collect();
+    if f.len() != 3 || f[0].is_empty() {
+        return None;
+    }
+    Some((f[0].to_string(), f[1].parse().ok()?, f[2].parse().ok()?))
+}
+
+/// Opens a window running `shell_cmd` in `cwd` and returns its address.
+pub fn new_window(bin: &Path, cwd: &str, shell_cmd: &str) -> Result<(String, u32, u32), TmuxError> {
+    let out = run_tmux(bin, &new_window_args(cwd, shell_cmd))?;
+    parse_new_window_output(&out)
+        .ok_or_else(|| TmuxError::Io(format!("unexpected new-window output: {out:?}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +175,27 @@ mod tests {
             classify_tmux_failure("no server running on /tmp/x"),
             TmuxError::NoServer
         ));
+    }
+
+    #[test]
+    fn parse_new_window_output_roundtrip() {
+        assert_eq!(
+            parse_new_window_output("work\t3\t0\n"),
+            Some(("work".to_string(), 3, 0))
+        );
+        assert_eq!(parse_new_window_output("garbage"), None);
+        assert_eq!(parse_new_window_output("a\tx\t0\n"), None);
+        assert_eq!(parse_new_window_output(""), None);
+    }
+
+    #[test]
+    fn new_window_args_quote_safe() {
+        let args = new_window_args("/Users/x/my project", "claude --resume abc");
+        assert!(args.contains(&"/Users/x/my project"));
+        assert_eq!(args.iter().filter(|a| a.contains("my project")).count(), 1);
+        let c = args.iter().position(|a| *a == "-c").unwrap();
+        assert_eq!(args[c + 1], "/Users/x/my project");
+        assert_eq!(*args.last().unwrap(), "claude --resume abc");
     }
 
     #[test]

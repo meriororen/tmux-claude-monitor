@@ -13,6 +13,10 @@ function card(paneId: string): SessionCard {
     summary: "",
     state: "Idle",
     idleSecs: 0,
+    sessionUuid: null,
+    cwd: "/tmp",
+    starred: false,
+    transcriptMissing: false,
   };
 }
 const scored = (ids: string[]): ScoredCard[] =>
@@ -21,7 +25,7 @@ const scored = (ids: string[]): ScoredCard[] =>
 const key = (k: string, over: Partial<{ ctrl: boolean; composing: boolean }> = {}) =>
   ({ type: "key", key: k, ctrl: false, composing: false, ...over }) as const;
 
-const normalAt = (id: string): UiState => ({ mode: "normal", query: "", selectedPaneId: id });
+const normalAt = (id: string): UiState => ({ mode: "normal", query: "", selectedPaneId: id, tab: "all" });
 
 describe("normal mode", () => {
   const vis = scored(["%1", "%2", "%3"]);
@@ -73,11 +77,11 @@ describe("normal mode", () => {
 
 describe("search mode", () => {
   const vis = scored(["%1", "%2"]);
-  const searching: UiState = { mode: "search", query: "ra", selectedPaneId: "%1" };
+  const searching: UiState = { mode: "search", query: "ra", selectedPaneId: "%1", tab: "all" };
 
   test("Escape clears query and returns to normal", () => {
     const { state } = reduce(searching, key("Escape"), vis);
-    expect(state).toEqual({ mode: "normal", query: "", selectedPaneId: "%1" });
+    expect(state).toEqual({ mode: "normal", query: "", selectedPaneId: "%1", tab: "all" });
   });
 
   test("Enter jumps to selected match", () => {
@@ -114,7 +118,7 @@ describe("search mode", () => {
 
 describe("handled flag (drives preventDefault in the glue)", () => {
   const vis = scored(["%1", "%2"]);
-  const searching: UiState = { mode: "search", query: "ra", selectedPaneId: "%1" };
+  const searching: UiState = { mode: "search", query: "ra", selectedPaneId: "%1", tab: "all" };
 
   test("backspace with text is NOT handled (input owns deletion)", () => {
     expect(reduce(searching, key("Backspace"), vis).handled).toBe(false);
@@ -136,9 +140,9 @@ describe("handled flag (drives preventDefault in the glue)", () => {
 
 describe("shown / reconcile", () => {
   test("shown resets dirty state to normal, empty query, first card", () => {
-    const dirty: UiState = { mode: "search", query: "xx", selectedPaneId: "%9" };
+    const dirty: UiState = { mode: "search", query: "xx", selectedPaneId: "%9", tab: "favorites" };
     const { state } = reduce(dirty, { type: "shown" }, scored(["%1", "%2"]));
-    expect(state).toEqual({ mode: "normal", query: "", selectedPaneId: "%1" });
+    expect(state).toEqual({ mode: "normal", query: "", selectedPaneId: "%1", tab: "all" });
   });
 
   test("shown with empty list selects null", () => {
@@ -158,5 +162,49 @@ describe("shown / reconcile", () => {
     expect(reconcile(normalAt("%2"), scored(["%a", "%b", "%c"]), 1).selectedPaneId).toBe("%b");
     // empty list → null
     expect(reconcile(s, [], 2).selectedPaneId).toBeNull();
+  });
+});
+
+describe("tab and star", () => {
+  test("tab_key_switches_tab_and_resets", () => {
+    const s: UiState = { mode: "normal", query: "zz", selectedPaneId: "%2", tab: "all" };
+    const r = reduce(s, key("Tab"), scored(["%f1", "%f2"]));
+    expect(r.handled).toBe(true);
+    expect(r.state).toEqual({ mode: "normal", query: "", selectedPaneId: "%f1", tab: "favorites" });
+    const back = reduce(r.state, key("Tab"), scored(["%1"]));
+    expect(back.state.tab).toBe("all");
+  });
+
+  test("tab_in_search_exits_to_normal", () => {
+    const s: UiState = { mode: "search", query: "ab", selectedPaneId: "%1", tab: "all" };
+    const r = reduce(s, key("Tab"), scored(["%f1"]));
+    expect(r.handled).toBe(true);
+    expect(r.state.mode).toBe("normal");
+    expect(r.state.query).toBe("");
+    expect(r.state.tab).toBe("favorites");
+  });
+
+  test("f_emits_toggle_star_for_selected", () => {
+    const r = reduce(normalAt("%2"), key("f"), scored(["%1", "%2"]));
+    expect(r.handled).toBe(true);
+    expect(r.action).toEqual({ type: "toggleStar", card: card("%2") });
+  });
+
+  test("f_without_selection_is_none", () => {
+    const r = reduce(normalAt("%9"), key("f"), scored(["%1"]));
+    expect(r.action).toEqual({ type: "none" });
+    expect(reduce(normalAt("%1"), key("f"), []).action).toEqual({ type: "none" });
+  });
+
+  test("f in search mode is typed text, not star", () => {
+    const s: UiState = { mode: "search", query: "", selectedPaneId: "%1", tab: "all" };
+    const r = reduce(s, key("f"), scored(["%1"]));
+    expect(r.handled).toBe(false);
+    expect(r.action).toEqual({ type: "none" });
+  });
+
+  test("shown_resets_tab_to_all", () => {
+    const s: UiState = { mode: "normal", query: "", selectedPaneId: "%f1", tab: "favorites" };
+    expect(reduce(s, { type: "shown" }, scored(["%1"])).state.tab).toBe("all");
   });
 });

@@ -12,26 +12,54 @@ pub struct ClaudeProc {
     pub pid: i32,
     pub cmdline: String,
     pub resume_session_id: Option<String>,
+    /// Process age from `ps etime`, if parseable. Used to tell which
+    /// transcript files can belong to this process (born after it started).
+    pub age_secs: Option<u64>,
 }
 
 /// One `ps` snapshot per poll tick; the caller holds the output.
 pub fn snapshot_ps() -> String {
     Command::new("/bin/ps")
-        .args(["-axo", "pid=,ppid=,command="])
+        .args(["-axo", "pid=,ppid=,etime=,command="])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         .unwrap_or_default()
 }
 
-fn parse_ps(ps_output: &str) -> Vec<(i32, i32, &str)> {
+/// Parses `ps etime` ([[dd-]hh:]mm:ss) into seconds.
+pub fn parse_etime(s: &str) -> Option<u64> {
+    let (days, rest) = match s.split_once('-') {
+        Some((d, r)) => (d.parse::<u64>().ok()?, r),
+        None => (0, s),
+    };
+    let nums: Vec<u64> = rest
+        .split(':')
+        .map(|p| p.parse::<u64>().ok())
+        .collect::<Option<_>>()?;
+    let secs = match nums[..] {
+        [m, s] => m * 60 + s,
+        [h, m, s] => h * 3600 + m * 60 + s,
+        _ => return None,
+    };
+    Some(days * 86400 + secs)
+}
+
+fn parse_ps(ps_output: &str) -> Vec<(i32, i32, &str, &str)> {
     ps_output
         .lines()
         .filter_map(|line| {
             let line = line.trim_start();
             let (pid_s, rest) = line.split_once(char::is_whitespace)?;
             let rest = rest.trim_start();
-            let (ppid_s, cmd) = rest.split_once(char::is_whitespace)?;
-            Some((pid_s.parse().ok()?, ppid_s.parse().ok()?, cmd.trim_start()))
+            let (ppid_s, rest) = rest.split_once(char::is_whitespace)?;
+            let rest = rest.trim_start();
+            let (etime, cmd) = rest.split_once(char::is_whitespace)?;
+            Some((
+                pid_s.parse().ok()?,
+                ppid_s.parse().ok()?,
+                etime,
+                cmd.trim_start(),
+            ))
         })
         .collect()
 }
@@ -54,18 +82,19 @@ fn is_claude_cmdline(cmd: &str) -> bool {
 /// Pure: BFS the descendant tree of `pane_pid` in the ps snapshot.
 pub fn find_claude_in_pane(pane_pid: i32, ps_output: &str) -> Option<ClaudeProc> {
     let procs = parse_ps(ps_output);
-    let mut children: HashMap<i32, Vec<(i32, &str)>> = HashMap::new();
-    for (pid, ppid, cmd) in &procs {
-        children.entry(*ppid).or_default().push((*pid, cmd));
+    let mut children: HashMap<i32, Vec<(i32, &str, &str)>> = HashMap::new();
+    for (pid, ppid, etime, cmd) in &procs {
+        children.entry(*ppid).or_default().push((*pid, etime, cmd));
     }
     let mut queue = vec![pane_pid];
     while let Some(pid) = queue.pop() {
-        for (child_pid, cmd) in children.get(&pid).into_iter().flatten() {
+        for (child_pid, etime, cmd) in children.get(&pid).into_iter().flatten() {
             if is_claude_cmdline(cmd) {
                 return Some(ClaudeProc {
                     pid: *child_pid,
                     cmdline: (*cmd).to_string(),
                     resume_session_id: extract_resume_id(cmd),
+                    age_secs: parse_etime(etime),
                 });
             }
             queue.push(*child_pid);
@@ -100,7 +129,7 @@ pub fn cwd_of_pid(pid: i32) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    const PS: &str = " 1993     1075 -zsh\n77840     1993 claude --resume 01234567-89ab-cdef-0123-456789abcdef\n77900    77840 git status\n";
+    const PS: &str = " 1993     1075 10:00:00 -zsh\n77840     1993 01:00 claude --resume 01234567-89ab-cdef-0123-456789abcdef\n77900    77840 00:01 git status\n";
 
     #[test]
     fn find_claude_direct() {
@@ -110,23 +139,33 @@ mod tests {
             c.resume_session_id.as_deref(),
             Some("01234567-89ab-cdef-0123-456789abcdef")
         );
+        assert_eq!(c.age_secs, Some(60));
+    }
+
+    #[test]
+    fn parse_etime_formats() {
+        assert_eq!(parse_etime("05:42"), Some(342));
+        assert_eq!(parse_etime("11:04:03"), Some(39843));
+        assert_eq!(parse_etime("2-01:00:00"), Some(176400));
+        assert_eq!(parse_etime(""), None);
+        assert_eq!(parse_etime("garbage"), None);
     }
 
     #[test]
     fn find_claude_node_wrapper() {
-        let ps = " 10 1 -zsh\n 20 10 node /Users/x/.nvm/versions/node/v24/lib/node_modules/@anthropic-ai/claude-code/cli.js\n";
+        let ps = " 10 1 00:30 -zsh\n 20 10 00:20 node /Users/x/.nvm/versions/node/v24/lib/node_modules/@anthropic-ai/claude-code/cli.js\n";
         assert_eq!(find_claude_in_pane(10, ps).unwrap().pid, 20);
     }
 
     #[test]
     fn find_claude_grandchild() {
-        let ps = " 10 1 -zsh\n 15 10 -zsh\n 20 15 claude\n";
+        let ps = " 10 1 00:30 -zsh\n 15 10 00:25 -zsh\n 20 15 00:20 claude\n";
         assert_eq!(find_claude_in_pane(10, ps).unwrap().pid, 20);
     }
 
     #[test]
     fn no_claude_in_plain_shell_pane() {
-        let ps = " 30 1 -zsh\n 31 30 nvim .\n";
+        let ps = " 30 1 00:30 -zsh\n 31 30 00:10 nvim .\n";
         assert!(find_claude_in_pane(30, ps).is_none());
     }
 

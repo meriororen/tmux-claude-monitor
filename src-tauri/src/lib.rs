@@ -3,10 +3,18 @@ pub mod window;
 pub mod jump;
 pub mod poller;
 pub mod settings;
+pub mod favorites;
 pub mod state_detect;
 pub mod transcript;
 pub mod procs;
 pub mod tmux;
+
+/// Shared favorites store: the poller clones it each tick, commands mutate it
+/// and write through to favorites.json.
+pub struct FavState(pub std::sync::Mutex<favorites::Favorites>);
+
+/// session uuid → (tmux session, window, pane) of live sessions; rebuilt each tick.
+pub struct LiveIndex(pub std::sync::Mutex<std::collections::HashMap<String, (String, u32, u32)>>);
 
 /// Result of registering the global shortcut at launch: None = registered,
 /// Some(err) = failed (e.g. taken by another app). The tray menu surfaces it.
@@ -30,6 +38,8 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             jump::jump_to_session,
+            favorites::toggle_favorite,
+            favorites::resume_session,
             settings::save_window_pos,
             settings::open_settings,
             window::hide_panel
@@ -54,6 +64,10 @@ pub fn run() {
                 .err()
                 .map(|e| format!("{shortcut}: {e}"));
             app.manage(ShortcutStatus(err));
+            app.manage(FavState(std::sync::Mutex::new(favorites::Favorites::load(
+                &poller::config_dir(app.handle()),
+            ))));
+            app.manage(LiveIndex(std::sync::Mutex::new(Default::default())));
             tray::setup_tray(app, app.state::<ShortcutStatus>().0.clone())?;
             poller::spawn(app.handle().clone());
             if let Some(win) = app.get_webview_window("main") {

@@ -72,6 +72,10 @@ mod tests {
             summary: String::new(),
             state,
             idle_secs: 0,
+            session_uuid: None,
+            cwd: "/tmp/t".into(),
+            starred: false,
+            transcript_missing: false,
         }
     }
 
