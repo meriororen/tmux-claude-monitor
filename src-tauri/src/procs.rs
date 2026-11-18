@@ -79,11 +79,22 @@ fn is_claude_cmdline(cmd: &str) -> bool {
     false
 }
 
-/// Pure: BFS the descendant tree of `pane_pid` in the ps snapshot.
+/// Pure: check `pane_pid` itself, then BFS its descendant tree in the ps
+/// snapshot. The pane PID itself matters for resumed favorites: tmux execs
+/// the window command directly, so the pane PID IS the claude process and
+/// it has no shell parent.
 pub fn find_claude_in_pane(pane_pid: i32, ps_output: &str) -> Option<ClaudeProc> {
     let procs = parse_ps(ps_output);
     let mut children: HashMap<i32, Vec<(i32, &str, &str)>> = HashMap::new();
     for (pid, ppid, etime, cmd) in &procs {
+        if *pid == pane_pid && is_claude_cmdline(cmd) {
+            return Some(ClaudeProc {
+                pid: *pid,
+                cmdline: (*cmd).to_string(),
+                resume_session_id: extract_resume_id(cmd),
+                age_secs: parse_etime(etime),
+            });
+        }
         children.entry(*ppid).or_default().push((*pid, etime, cmd));
     }
     let mut queue = vec![pane_pid];
@@ -155,6 +166,21 @@ mod tests {
     fn find_claude_node_wrapper() {
         let ps = " 10 1 00:30 -zsh\n 20 10 00:20 node /Users/x/.nvm/versions/node/v24/lib/node_modules/@anthropic-ai/claude-code/cli.js\n";
         assert_eq!(find_claude_in_pane(10, ps).unwrap().pid, 20);
+    }
+
+    #[test]
+    fn find_claude_when_pane_pid_is_claude_itself() {
+        // A resumed favorite: tmux execs the command directly, so the pane
+        // PID IS the claude process (no shell parent). Its children are MCP
+        // servers, not claude.
+        let ps = " 10 1 00:02 /Users/x/.local/bin/claude --resume 01234567-89ab-cdef-0123-456789abcdef\n 20 10 00:02 npm exec chrome-devtools-mcp@latest\n";
+        let c = find_claude_in_pane(10, ps).unwrap();
+        assert_eq!(c.pid, 10);
+        assert_eq!(
+            c.resume_session_id.as_deref(),
+            Some("01234567-89ab-cdef-0123-456789abcdef")
+        );
+        assert_eq!(c.age_secs, Some(2));
     }
 
     #[test]
