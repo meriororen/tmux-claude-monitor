@@ -39,7 +39,7 @@ Press `f` (or click the ☆ on a card) to star a session. `Tab` (or the chips at
 - The Favorites tab shows live starred sessions as usual. A starred session whose pane or process is gone appears as a dimmed "dead" card with its folder and last-activity age (derived live from the transcript jsonl).
 - **Enter (or click) on a dead card resumes it**: a new tmux window is created at the saved working directory running `claude --resume <session-id>`, and the app switches you to it. If the transcript jsonl has been deleted, the card says "transcript missing" and cannot be resumed.
 - Favorites are stored in `favorites.json` next to `settings.json` (`~/Library/Application Support/jp.isa.tmux-claude-monitor/`). The file is managed by the app; manual edits apply after an app restart.
-- The `claude` binary used for resume is looked up in the tmux server's environment by default. Override it with the `TCM_CLAUDE_BIN` env var or the `claude_bin` setting.
+- The `claude` binary used for resume is auto-discovered from the common install locations (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`), falling back to the tmux server's PATH. Override it with the `TCM_CLAUDE_BIN` env var or the `claude_bin` setting.
 
 ## Build & Install
 
@@ -69,7 +69,7 @@ Click the ⚙ in the header to open `settings.json` in your editor. Edits apply 
 | `notifications` | true | Enable/disable macOS notifications |
 | `window_pos` | null | Panel position (saved automatically when you drag it) |
 | `global_shortcut` | "cmd+shift+k" | Summon shortcut (**applies after restart**; if registration fails due to a conflict, the tray menu shows ⚠) |
-| `claude_bin` | null | Path to the `claude` binary used when resuming a favorite. `null` = look it up on the tmux server's PATH (the `TCM_CLAUDE_BIN` env var also overrides). Paths containing spaces are not supported |
+| `claude_bin` | null | Path to the `claude` binary used when resuming a favorite. `null` = auto-discover from `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, else the tmux server's PATH (the `TCM_CLAUDE_BIN` env var also overrides). Paths containing spaces are not supported |
 
 Location: `~/Library/Application Support/jp.isa.tmux-claude-monitor/settings.json`
 

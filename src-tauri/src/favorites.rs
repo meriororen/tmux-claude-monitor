@@ -153,13 +153,44 @@ pub fn favorites_view(
     out
 }
 
-/// `TCM_CLAUDE_BIN` env → settings → bare `claude`.
+/// `TCM_CLAUDE_BIN` env → settings → discovered install → bare `claude`.
+///
+/// The bare fallback runs on the tmux *server's* PATH, which is typically
+/// just homebrew + system dirs — it misses the standard `~/.local/bin`
+/// install, and the new window then dies instantly ("command not found",
+/// surfacing as a "can't find window" switch error). So before falling
+/// back, look for the binary in the common install locations and pass an
+/// absolute path.
 pub fn resolve_claude_bin(setting: Option<&str>) -> String {
+    resolve_claude_bin_with(setting, find_claude_in(&default_claude_dirs()))
+}
+
+pub fn resolve_claude_bin_with(setting: Option<&str>, discovered: Option<String>) -> String {
     std::env::var("TCM_CLAUDE_BIN")
         .ok()
         .filter(|s| !s.is_empty())
         .or_else(|| setting.filter(|s| !s.is_empty()).map(str::to_string))
+        .or(discovered)
         .unwrap_or_else(|| "claude".to_string())
+}
+
+fn default_claude_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/bin"));
+    }
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    dirs
+}
+
+/// First `claude` found in `dirs`, as an absolute path. `is_file` follows
+/// symlinks, so the usual `~/.local/bin/claude -> versions/<v>` link counts.
+pub fn find_claude_in(dirs: &[PathBuf]) -> Option<String> {
+    dirs.iter()
+        .map(|d| d.join("claude"))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Session uuids are interpolated into a shell command: only `[0-9a-f-]`.
@@ -293,8 +324,35 @@ mod tests {
     #[test]
     fn resolve_claude_bin_precedence() {
         // The TCM_CLAUDE_BIN branch is not tested: env is process-global.
-        assert_eq!(resolve_claude_bin(Some("/x/claude")), "/x/claude");
-        assert_eq!(resolve_claude_bin(None), "claude");
+        // Setting wins over a discovered binary; discovery wins over the
+        // bare fallback (which relies on the tmux server PATH and in
+        // practice misses ~/.local/bin installs).
+        let found = Some("/home/u/.local/bin/claude".to_string());
+        assert_eq!(
+            resolve_claude_bin_with(Some("/x/claude"), found.clone()),
+            "/x/claude"
+        );
+        assert_eq!(
+            resolve_claude_bin_with(None, found),
+            "/home/u/.local/bin/claude"
+        );
+        assert_eq!(resolve_claude_bin_with(None, None), "claude");
+    }
+
+    #[test]
+    fn find_claude_in_picks_first_dir_containing_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let empty = tmp.path().join("empty");
+        let has = tmp.path().join("has");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::fs::create_dir_all(&has).unwrap();
+        std::fs::write(has.join("claude"), "#!/bin/sh\n").unwrap();
+
+        assert_eq!(
+            find_claude_in(&[empty.clone(), has.clone()]),
+            Some(has.join("claude").to_string_lossy().into_owned())
+        );
+        assert_eq!(find_claude_in(&[empty]), None);
     }
 
     #[test]
