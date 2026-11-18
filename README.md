@@ -6,6 +6,8 @@ A macOS menu-bar app (Tauri v2) that monitors every Claude Code session running 
 
 If you keep several persistent tmux sessions, each with a Claude Code pane working on something different, you know the problem: which session is still working, which one is waiting for your input, and which one went stale an hour ago? Instead of cycling through sessions with `ctrl+b n`/`p`, press a shortcut and see them all.
 
+<p align="center"><img src="docs/screenshot.png" width="400" alt="tmux Claude Monitor panel: one card per Claude Code session with status dot, title, summary, idle time, favorite stars, and All/Favorites tabs"></p>
+
 - **Summon / hide with ⌘⇧K** (global shortcut, configurable in `settings.json`; takes effect after restart)
 - One card per Claude session: status dot (🟢 working / 🟡 needs input / ⚪ idle or stale), a derived title, a one-line summary of recent activity, and idle time
 - **macOS notification the moment a session needs input** (permission dialogs and other structured prompts). A turn that merely ends with a prose question ("Want me to run the tests?") shows amber but never notifies

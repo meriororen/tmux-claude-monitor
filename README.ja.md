@@ -4,6 +4,8 @@
 
 メニューバー常駐の召喚型パネルで、tmux 内で動いているすべての Claude Code セッションを一覧監視する macOS アプリ（Tauri v2）。
 
+<p align="center"><img src="docs/screenshot.png" width="400" alt="tmux Claude Monitor のパネル: セッションごとのカード（状態ドット・タイトル・要約・アイドル時間・お気に入り★）と All/Favorites タブ"></p>
+
 - **⌘⇧K で召喚/非表示**（グローバルショートカット、`settings.json` で変更可・変更は再起動後に反映）
 - 各カード: 状態ドット（🟢作業中 / 🟡入力待ち / ⚪アイドル・放置）・タイトル・直近アクティビティの要約・アイドル時間
 - 入力待ち（権限ダイアログ等の structured prompt）になった瞬間に macOS 通知。文末が「?」のただの質問はアンバー表示のみで通知しない
